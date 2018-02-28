@@ -1,7 +1,7 @@
 import torch
 from torch.autograd import Variable
 import probtorch
-from probtorch.distributions import Normal
+from probtorch.distributions import Normal, Concrete
 from probtorch.util import log_mean_exp
 from common import TestCase, run_tests
 
@@ -33,6 +33,31 @@ class TestLogBatchMarginal(TestCase):
         self.assertEqual(log_joint, log_joint_2)
         self.assertEqual(log_prod_mar, log_prod_mar_2)
 
+    def test_concrete(self):
+        S = 3  # sample size
+        B = 5  # batch size
+        D = 2  # hidden dim
+        K = 4  # event dim
+        log_w = Variable(torch.randn(S, B, D, K))
+        q = probtorch.Trace()
+        q.concrete(log_w, 0.66, name='y')
+        y = q['y']
+        value = y.value
+
+        log_joint, log_prod_mar = q.log_batch_marginal(sample_dim=0, batch_dim=1, nodes=['y'])
+
+        # compare result
+        log_probs = Variable(torch.zeros(B, S, B, D))
+        for b1 in range(B):
+            for s in range(S):
+                for b2 in range(B):
+                    d = Concrete(log_w[s, b2], 0.66)
+                    log_probs[b1, s, b2] = d.log_prob(value[s, b1])
+        log_joint_2 = log_mean_exp(log_probs.sum(3), 2).transpose(0, 1)
+        log_prod_mar_2 = log_mean_exp(log_probs, 2).sum(2).transpose(0, 1)
+
+        self.assertEqual(log_joint, log_joint_2)
+        self.assertEqual(log_prod_mar, log_prod_mar_2)
 
 if __name__ == '__main__':
     run_tests()
